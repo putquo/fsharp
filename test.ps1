@@ -51,7 +51,7 @@ function Enable-All-UnitTests($BuildDir) {
 function Test-Refactoring-Projects($PracticeExercisesDir) {
     Write-Output "Testing refactoring projects"
     @("tree-building", "ledger", "markdown") | ForEach-Object {
-        Run-Command "dotnet test $practiceExercisesDir/$_"
+        Invoke-Tests -Path "$PracticeExercisesDir/$_"
     }
 }
 
@@ -86,20 +86,32 @@ function Add-Packages-ExerciseImplementation($PracticeExercisesDir) {
     Run-Command "dotnet add $PracticeExercisesDir/sgf-parsing package FParsec"
 }
 
-function Test-ExerciseImplementation($Exercise, $BuildDir, $ConceptExercisesDir, $PracticeExercisesDir) {
+function Test-ExerciseImplementation($Exercise, $BuildDir, $ConceptExercisesDir, $PracticeExercisesDir, $IsCI) {
     Write-Output "Running tests"
 
     if (-Not $Exercise) {
-        Run-Command "dotnet test $buildDir/Exercises.sln"
+        Invoke-Tests -Path $BuildDir -IsCI $IsCI
     }
     elseif (Test-Path "$ConceptExercisesDir/$Exercise") {
-        Run-Command "dotnet test $conceptExercisesDir/$exercise"
+        Invoke-Tests -Path "$ConceptExercisesDir/$Exercise" -IsCI $IsCI
     }
     elseif (Test-Path "$PracticeExercisesDir/$Exercise") {
-        Run-Command "dotnet test $practiceExercisesDir/$exercise"
+        Invoke-Tests -Path "$PracticeExercisesDir/$Exercise" -IsCI $IsCI
     }
     else {
         throw "Could not find exercise '$Exercise'"
+    }
+}
+
+function Invoke-Tests($Path, $IsCI) {
+    if ($IsCI) {
+        Get-ChildItem -Path $Path -Include "*.fsproj" -Recurse | ForEach-Object {
+            Run-Command "dotnet add $_ package JunitXml.TestLogger -n -v 3.0.134"
+        }
+        Run-Command "dotnet test $Path --logger `"junit;LogFilePath=results/test.xml`""
+    }
+    else {
+        Run-Command "dotnet test `"$Path`""
     }
 }
 
@@ -108,6 +120,7 @@ $buildDir = Join-Path $PSScriptRoot "build"
 $conceptExercisesDir = Join-Path $buildDir "concept"
 $practiceExercisesDir = Join-Path $buildDir "practice"
 $sourceDir = Resolve-Path "exercises"
+$isCi = [System.Convert]::ToBoolean($env:CI)
 
 Clean $buildDir
 Copy-Exercise $sourceDir $buildDir
@@ -120,6 +133,6 @@ if (!$Exercise) {
 
 Use-ExerciseImplementation -ConceptExercisesDir $conceptExercisesDir -PracticeExercisesDir $practiceExercisesDir
 Add-Packages-ExerciseImplementation -PracticeExercisesDir $practiceExercisesDir
-Test-ExerciseImplementation -Exercise $Exercise -BuildDir $buildDir -ConceptExercisesDir $conceptExercisesDir -PracticeExercisesDir $practiceExercisesDir
+Test-ExerciseImplementation -Exercise $Exercise -BuildDir $buildDir -ConceptExercisesDir $conceptExercisesDir -PracticeExercisesDir $practiceExercisesDir -IsCI $isCi
 
 exit $LastExitCode
